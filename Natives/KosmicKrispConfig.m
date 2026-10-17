@@ -18,6 +18,10 @@ extern char **environ;
         setenv("MESA_SHADER_CACHE_DIR", cacheDir.UTF8String, 1);
     }
 
+    if (![custom containsString:@"MESA_SHADER_CACHE_MAX_SIZE="]) {
+        setenv("MESA_SHADER_CACHE_MAX_SIZE", "512M", 1);
+    }
+
     // MESA_VK_ABORT_ON_DEVICE_LOSS is deliberately never set here, it kills the process on
     // device loss and would hide the log we want to read.
 }
