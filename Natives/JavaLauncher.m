@@ -344,8 +344,16 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     NSString *graphicsBackend = nil;
     if (gameHasVulkanBackend) {
         BOOL vulkanRuns = !vulkanUnavailable && ame_renderer_is_vulkan_native(ame_renderer_from_name(getenv("AME_RENDERER")));
-        graphicsBackend = vulkanRuns ? @"vulkan" : @"opengl";
-        NSLog(@"[JavaLauncher] preferredGraphicsBackend=%@", graphicsBackend);
+        if (vulkanRuns) {
+            // Vulkan-only renderers have no GL to fall back to
+            graphicsBackend = @"vulkan";
+        } else if (vulkanUnavailable) {
+            // the Vulkan driver failed its preflight, a saved "vulkan" could never start
+            graphicsBackend = @"opengl";
+        }
+        // any other renderer (MobileGL, Zink, ...): leave options.txt alone so the in-game
+        // Graphics API choice is kept between launches (#42)
+        NSLog(@"[JavaLauncher] preferredGraphicsBackend=%@", graphicsBackend ?: @"(untouched)");
     }
     [MinecraftOptionUtils setupOptionsAtGameDir:gameDir graphicsBackend:graphicsBackend];
     

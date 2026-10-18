@@ -651,7 +651,7 @@ static GameSurfaceView* pojavWindow;
     BOOL handled = NO;
 
     for (UIPress *press in presses) {
-        if (press.key != nil && [KeyboardInput sendKeyEvent:press.key down:YES]) {
+        if (press.key != nil && [KeyboardInput sendKeyEvent:press.key down:YES textFieldActive:self.inputTextField.isFirstResponder]) {
             handled = YES;
         }
     }
@@ -666,7 +666,7 @@ static GameSurfaceView* pojavWindow;
     BOOL handled = NO;
 
     for (UIPress *press in presses) {
-        if (press.key != nil && [KeyboardInput sendKeyEvent:press.key down:NO]) {
+        if (press.key != nil && [KeyboardInput sendKeyEvent:press.key down:NO textFieldActive:self.inputTextField.isFirstResponder]) {
             handled = YES;
         }
     }
@@ -674,6 +674,21 @@ static GameSurfaceView* pojavWindow;
 
     if (!handled) {
         [super pressesEnded:presses withEvent:event];
+    }
+}
+
+- (void)pressesCancelled:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    // a cancelled press never gets a pressesEnded, release the key or it stays down
+    BOOL handled = NO;
+
+    for (UIPress *press in presses) {
+        if (press.key != nil && [KeyboardInput sendKeyEvent:press.key down:NO textFieldActive:self.inputTextField.isFirstResponder]) {
+            handled = YES;
+        }
+    }
+
+    if (!handled) {
+        [super pressesCancelled:presses withEvent:event];
     }
 }
 
