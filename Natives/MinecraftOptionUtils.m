@@ -24,10 +24,32 @@
         [options setDefaultForKey:@"preferredGraphicsBackend" value:[NSString stringWithFormat:@"\"%@\"", graphicsBackend]];
     }
     // Default settings for performance
-    [options setDefaultForKey:@"mipmapLevels" value:@"4"];
+    [options setDefaultForKey:@"graphicsPreset" value:@"custom"];
+    [options setDefaultForKey:@"biomeBlendRadius" value:@"7"];
+    [options setDefaultForKey:@"mipmapLevels" value:@"0"];
     [options setDefaultForKey:@"particles" value:@"0"];
-    [options setDefaultForKey:@"renderDistance" value:@"8"];
+    [options setDefaultForKey:@"renderDistance" value:@"16"];
     [options setDefaultForKey:@"simulationDistance" value:@"5"];
+    [options setDefaultForKey:@"entityDistanceScaling" value:@"5.0"];
+    [options setDefaultForKey:@"textureFiltering" value:@"2"];
+    [options setDefaultForKey:@"maxAnisotropyBit" value:@"3"];
+    // Default settings for accessibility
+    [options setDefaultForKey:@"fov" value:@"0.825"];
+    [options setDefaultForKey:@"fovEffectScale" value:@"0.0"];
+    [options setDefaultForKey:@"damageTiltStrength" value:@"0.10"];
+    [options setDefaultForKey:@"darkMojangStudiosBackground" value:@"true"];
+    [options setDefaultForKey:@"glintSpeed" value:@"1.0"];
+    [options setDefaultForKey:@"glintStrength" value:@"1.0"];
+    [options setDefaultForKey:@"bobView" value:@"false"];
+    [options setDefaultForKey:@"showSubtitles" value:@"true"];
+    // Other default settings
+    [options setDefaultForKey:@"operatorItemsTab" value:@"true"];
+    [options setDefaultForKey:@"chunkSectionFadeInTime" value:@"0.0"];
+    [options setDefaultForKey:@"toggleSprint" value:@"true"];
+    [options setKey:@"onboardAccessibility" value:@"true"];
+    [options setKey:@"skipMultiplayerWarning" value:@"true"];
+    [options setKey:@"joinedFirstServer" value:@"true"];
+    [options setKey:@"tutorialStep" value:@"none"];
     [options save];
 }
 
