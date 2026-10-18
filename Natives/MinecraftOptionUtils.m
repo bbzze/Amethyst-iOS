@@ -46,7 +46,7 @@
     [options setDefaultForKey:@"operatorItemsTab" value:@"true"];
     [options setDefaultForKey:@"chunkSectionFadeInTime" value:@"0.0"];
     [options setDefaultForKey:@"toggleSprint" value:@"true"];
-    [options setKey:@"onboardAccessibility" value:@"true"];
+    [options setKey:@"onboardAccessibility" value:@"false"];
     [options setKey:@"skipMultiplayerWarning" value:@"true"];
     [options setKey:@"joinedFirstServer" value:@"true"];
     [options setKey:@"tutorialStep" value:@"none"];
