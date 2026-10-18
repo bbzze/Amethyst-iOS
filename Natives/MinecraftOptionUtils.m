@@ -21,12 +21,12 @@
     [options setKey:@"overrideWidth" value:@(windowWidth)];
     [options setKey:@"overrideHeight" value:@(windowHeight)];
     if (graphicsBackend.length) {
-        [options setKey:@"preferredGraphicsBackend" value:[NSString stringWithFormat:@"\"%@\"", graphicsBackend]];
+        [options setDefaultForKey:@"preferredGraphicsBackend" value:[NSString stringWithFormat:@"\"%@\"", graphicsBackend]];
     }
     // Default settings for performance
-    [options setDefaultForKey:@"mipmapLevels" value:@"0"];
-    [options setDefaultForKey:@"particles" value:@"1"];
-    [options setDefaultForKey:@"renderDistance" value:@"2"];
+    [options setDefaultForKey:@"mipmapLevels" value:@"4"];
+    [options setDefaultForKey:@"particles" value:@"0"];
+    [options setDefaultForKey:@"renderDistance" value:@"8"];
     [options setDefaultForKey:@"simulationDistance" value:@"5"];
     [options save];
 }
