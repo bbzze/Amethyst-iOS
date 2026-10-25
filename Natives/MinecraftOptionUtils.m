@@ -20,15 +20,34 @@
     [options setKey:@"fullscreen" value:@"false"];
     [options setKey:@"overrideWidth" value:@(windowWidth)];
     [options setKey:@"overrideHeight" value:@(windowHeight)];
-    if (graphicsBackend.length) {
-        // only on first creation of options.txt, never overwrite what the player or a mod (MetalUniversal) set (#44)
-        [options setDefaultForKey:@"preferredGraphicsBackend" value:[NSString stringWithFormat:@"\"%@\"", graphicsBackend]];
-    }
+    [options setDefaultForKey:@"guiScale" value:@"4"];
+    [options setDefaultForKey:@"debugGuiScale" value:@"4"];
     // Default settings for performance
+    [options setDefaultForKey:@"biomeBlendRadius" value:@"7"];
     [options setDefaultForKey:@"mipmapLevels" value:@"0"];
-    [options setDefaultForKey:@"particles" value:@"1"];
-    [options setDefaultForKey:@"renderDistance" value:@"2"];
+    [options setDefaultForKey:@"particles" value:@"0"];
+    [options setDefaultForKey:@"renderDistance" value:@"16"];
     [options setDefaultForKey:@"simulationDistance" value:@"5"];
+    [options setDefaultForKey:@"entityDistanceScaling" value:@"5.0"];
+    [options setDefaultForKey:@"textureFiltering" value:@"2"];
+    [options setDefaultForKey:@"maxAnisotropyBit" value:@"3"];
+    // Default settings for accessibility
+    [options setDefaultForKey:@"fov" value:@"0.825"];
+    [options setDefaultForKey:@"fovEffectScale" value:@"0.0"];
+    [options setDefaultForKey:@"damageTiltStrength" value:@"0.10"];
+    [options setDefaultForKey:@"darkMojangStudiosBackground" value:@"true"];
+    [options setDefaultForKey:@"glintSpeed" value:@"1.0"];
+    [options setDefaultForKey:@"glintStrength" value:@"1.0"];
+    [options setDefaultForKey:@"bobView" value:@"false"];
+    [options setDefaultForKey:@"showSubtitles" value:@"true"];
+    // Other default settings
+    [options setDefaultForKey:@"operatorItemsTab" value:@"true"];
+    [options setDefaultForKey:@"chunkSectionFadeInTime" value:@"0.0"];
+    [options setDefaultForKey:@"toggleSprint" value:@"true"];
+    [options setKey:@"onboardAccessibility" value:@"false"];
+    [options setKey:@"skipMultiplayerWarning" value:@"true"];
+    [options setKey:@"joinedFirstServer" value:@"true"];
+    [options setKey:@"tutorialStep" value:@"none"];
     [options save];
 }
 
