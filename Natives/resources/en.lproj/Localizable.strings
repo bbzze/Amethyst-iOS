@@ -477,6 +477,7 @@
 "mods.installed.not_checked" = "Updates not checked";
 "mods.installed.up_to_date" = "Up to date";
 "mods.installed.update_available" = "Update available: %@";
+"mods.installed.update_all" = "Update all";
 "mods.installed.versions" = "View versions";
 "mods.installed.remove" = "Remove mod";
 "mods.installed.remove_confirm" = "Remove %@ from this profile? Mods that depend on it may stop working.";
