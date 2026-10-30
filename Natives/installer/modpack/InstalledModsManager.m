@@ -38,6 +38,8 @@ static BOOL IMValidEntry(NSDictionary *entry, NSString *directory, NSError **err
 }
 
 @implementation InstalledModsManager
++ (void)clearUpdateCache { @synchronized (IMCache()) { [IMCache() removeAllObjects]; } }
+
 + (NSArray *)updateRequestsForRows:(NSArray *)rows {
     NSMutableArray *requests = [NSMutableArray new];
     for (NSDictionary *row in rows) {
