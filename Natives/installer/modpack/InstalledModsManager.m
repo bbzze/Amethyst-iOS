@@ -21,6 +21,11 @@ static NSError *IMError(NSString *key, NSString *detail) {
     return [NSError errorWithDomain:@"InstalledMods" code:1 userInfo:@{NSLocalizedDescriptionKey:message}];
 }
 static ModpackAPI *IMAPI(NSString *provider) { return [provider isEqual:@"curseforge"] ? [CurseForgeAPI new] : [ModrinthAPI new]; }
+static NSMutableDictionary *IMCache(void) {
+    static NSMutableDictionary *cache; static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [NSMutableDictionary new]; });
+    return cache;
+}
 static NSString *IMID(NSString *provider, NSString *project) { return [NSString stringWithFormat:@"%@:%@", provider, project]; }
 static BOOL IMValidEntry(NSDictionary *entry, NSString *directory, NSError **error) {
     NSString *name = entry[@"filename"];
@@ -33,6 +38,15 @@ static BOOL IMValidEntry(NSDictionary *entry, NSString *directory, NSError **err
 }
 
 @implementation InstalledModsManager
++ (NSArray *)updateRequestsForRows:(NSArray *)rows {
+    NSMutableArray *requests = [NSMutableArray new];
+    for (NSDictionary *row in rows) {
+        if (!row[@"update"]) continue;
+        [requests addObject:@{@"version": row[@"update"], @"provider": row[@"provider"], @"disabled": @(![row[@"enabled"] boolValue])}];
+    }
+    return requests;
+}
+
 + (id)persistentObject:(id)object {
     if ([object isKindOfClass:NSDictionary.class]) { NSMutableDictionary *result = [NSMutableDictionary new]; for (id key in object) { id value = [self persistentObject:object[key]]; if ([key isKindOfClass:NSString.class] && value) result[key] = value; } return result; }
     if ([object isKindOfClass:NSArray.class]) { NSMutableArray *result = [NSMutableArray new]; for (id item in object) { id value = [self persistentObject:item]; if (value) [result addObject:value]; } return result; }
@@ -98,7 +112,9 @@ static BOOL IMValidEntry(NSDictionary *entry, NSString *directory, NSError **err
         NSString *project = IMString(entry[@"version"][@"project_id"]), *provider = entry[@"provider"];
         if (project.length) {
             NSString *key = IMID(provider, project);
-            NSDictionary *status = catalog[key];
+            NSString *cacheKey = [NSString stringWithFormat:@"%@|%@|%@", key, IMString(filters[@"mcVersion"]), IMString(filters[@"loader"])];
+            NSDictionary *cached; @synchronized (IMCache()) { cached = IMCache()[cacheKey]; }
+            NSDictionary *status = catalog[key] ?: ([cached[@"time"] timeIntervalSinceNow] > -300 ? cached[@"status"] : nil);
             ModpackAPI *api = IMAPI(provider);
             if (!status) {
                 NSArray *versions = [api versionsForProject:project filters:filters];
@@ -107,6 +123,7 @@ static BOOL IMValidEntry(NSDictionary *entry, NSString *directory, NSError **err
                 for (NSDictionary *version in [versions sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"date_published" ascending:NO]]]) if (![version[@"downloadUnavailable"] boolValue] && [ModrinthModInstallation jarFileForVersion:version]) { latest = version; break; }
                 status = @{@"latest": latest ?: @{}, @"error": api.lastError.localizedDescription ?: @"", @"checked": @(versions != nil)};
                 catalog[key] = status;
+                if ([status[@"checked"] boolValue]) @synchronized (IMCache()) { IMCache()[cacheKey] = @{@"time": NSDate.date, @"status": status}; }
             }
             NSDictionary *current = entry[@"version"];
             if (!current[@"dependencies"]) current = [api versionForID:current[@"id"] projectID:project] ?: current;
