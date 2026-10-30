@@ -10,6 +10,10 @@
 #import "AFImageDownloader.h"
 #import "utils.h"
 
+@interface InstalledModsManager (UpdateCache)
++ (void)clearUpdateCache;
+@end
+
 @interface ModrinthIconView : UIImageView
 @end
 
@@ -497,6 +501,8 @@ static NSString *MRCategorySymbol(NSString *category) {
 @property(nonatomic) NSError *installedError;
 @property(nonatomic) NSUInteger installedGeneration;
 @property(nonatomic) ModrinthModInstallation *installedOperation;
+@property(nonatomic) NSMutableArray *updateQueue;
+@property(nonatomic) NSUInteger updateAllTotal;
 
 @end
 
@@ -548,7 +554,7 @@ static NSString *MRCategorySymbol(NSString *category) {
     [super viewWillAppear:animated];
     [self refreshProfile];
     [self refreshProviderAvailability];
-    if (self.isInstalledMode && !self.installedOperation.busy) [self refreshInstalled:YES];
+    if (self.isInstalledMode && !self.installedOperation.busy && !self.updateQueue.count) { if (self.installedEntries) [self reloadInstalledAfterChange]; else [self refreshInstalled:YES]; }
 }
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
@@ -566,7 +572,7 @@ static NSString *MRCategorySymbol(NSString *category) {
     NSArray *signature = @[root, profiles.selectedProfileName ?: @"", profile[@"lastVersionId"] ?: @"", profile[@"gameDir"] ?: @"", defaults];
     if ([signature isEqual:self.profileSignature]) return;
     if (self.installedOperation.busy) [self.installedOperation cancel];
-    self.installedGeneration++; self.installedEntries = nil;
+    self.installedGeneration++; self.installedEntries = nil; [self.updateQueue removeAllObjects]; self.updateAllTotal = 0;
     self.profileSignature = signature;
     self.profileName = profiles.selectedProfileName ?: @"";
     self.profileDefaults = defaults;
@@ -656,7 +662,7 @@ static NSString *MRCategorySymbol(NSString *category) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 2; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (self.isInstalledMode) return section == 0 ? (self.installedOperation.busy ? 1 : 2) : MAX(1, self.visibleInstalledEntries.count);
+    if (self.isInstalledMode) return section == 0 ? (self.installedOperation.busy ? 1 : 3) : MAX(1, self.visibleInstalledEntries.count);
     if (section == 0) return [self.contentType isEqual:@"mod"] ? 5 : 4;
     return self.results.count + ((self.loading || self.searchError || !self.results.count || !self.reachedLastPage) ? 1 : 0);
 }
@@ -765,14 +771,18 @@ static NSString *MRCategorySymbol(NSString *category) {
     if (indexPath.section == 0) {
         if (self.installedOperation.busy) {
             cell.textLabel.text = localize(self.installedOperation.checking ? @"mods.installed.resolving" : @"mods.installed.downloading", nil);
+            if (self.updateAllTotal) cell.textLabel.text = [NSString stringWithFormat:@"%@ (%lu/%lu)", cell.textLabel.text, (unsigned long)(self.updateAllTotal - self.updateQueue.count), (unsigned long)self.updateAllTotal];
             cell.detailTextLabel.text = self.installedOperation.installingVersion[@"version_number"];
             if (self.installedOperation.progress.totalUnitCount > 0) cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %d%%", cell.detailTextLabel.text ?: @"", (int)(100 * self.installedOperation.progress.fractionCompleted)];
             UIButton *cancel = [UIButton buttonWithType:UIButtonTypeSystem]; [cancel setTitle:localize(@"mods.install.cancel", nil) forState:UIControlStateNormal]; [cancel sizeToFit]; cancel.enabled = !self.installedOperation.verifying;
-            [cancel addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) { [self.installedOperation cancel]; }] forControlEvents:UIControlEventTouchUpInside]; cell.accessoryView = cancel;
+            [cancel addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) { [self.updateQueue removeAllObjects]; self.updateAllTotal = 0; [self.installedOperation cancel]; }] forControlEvents:UIControlEventTouchUpInside]; cell.accessoryView = cancel;
         } else {
-            cell.textLabel.text = localize(indexPath.row == 0 ? @"mods.installed.check_updates" : @"mods.installed.dependencies", nil);
+            NSUInteger available = self.updatableEntries.count;
+            cell.textLabel.text = localize(@[@"mods.installed.check_updates", @"mods.installed.update_all", @"mods.installed.dependencies"][indexPath.row], nil);
+            if (indexPath.row == 1) cell.textLabel.text = [NSString stringWithFormat:@"%@ (%lu)", cell.textLabel.text, (unsigned long)available];
             cell.detailTextLabel.text = indexPath.row == 0 && self.installedLoading ? localize(@"mods.loading", nil) : nil;
-            cell.textLabel.textColor = [ModrinthModInstallation isInstalling] || self.installedLoading ? UIColor.secondaryLabelColor : self.view.tintColor;
+            BOOL blocked = [ModrinthModInstallation isInstalling] || self.installedLoading || (indexPath.row == 1 && !available);
+            cell.textLabel.textColor = blocked ? UIColor.secondaryLabelColor : self.view.tintColor;
         }
         return cell;
     }
@@ -804,13 +814,63 @@ static NSString *MRCategorySymbol(NSString *category) {
         if (self.installedOperation.busy) wasBusy = YES;
         if (wasBusy && !self.installedOperation.busy && !self.installedOperation.checking) {
             wasBusy = NO;
-            if (self.installedOperation.error) [self showInstalledError:self.installedOperation.error];
-            [self refreshInstalled:YES];
+            NSError *failure = self.installedOperation.error;
+            if (failure) { [self.updateQueue removeAllObjects]; self.updateAllTotal = 0; [self showInstalledError:failure]; [self reloadInstalledAfterChange]; }
+            else if (self.updateQueue.count) [self startNextQueuedUpdate];
+            else { self.updateAllTotal = 0; [self reloadInstalledAfterChange]; }
         } else if (self.isInstalledMode) [self.tableView reloadData];
     };
     if (!version) [self.installedOperation resolveDependenciesWithFilters:self.profileDefaults];
     else if (enable) [self.installedOperation enableVersion:version resolvingDependenciesWithFilters:self.profileDefaults];
     else [self.installedOperation installVersion:version resolvingDependenciesWithFilters:self.profileDefaults];
+}
+- (NSArray *)updatableEntries {
+    NSMutableArray *list = [NSMutableArray new];
+    for (NSDictionary *entry in self.installedEntries ?: @[]) if (entry[@"update"] && [entry[@"enabled"] boolValue]) [list addObject:entry];
+    return list;
+}
+- (void)updateAll {
+    NSArray *entries = self.updatableEntries;
+    if (!entries.count) return;
+    self.updateQueue = entries.mutableCopy;
+    self.updateAllTotal = entries.count;
+    [self startNextQueuedUpdate];
+}
+- (void)startNextQueuedUpdate {
+    if (!self.updateQueue.count) { self.updateAllTotal = 0; return; }
+    if ([ModrinthModInstallation isInstalling] || self.installedLoading) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self startNextQueuedUpdate]; });
+        return;
+    }
+    NSDictionary *entry = self.updateQueue.firstObject; [self.updateQueue removeObjectAtIndex:0];
+    [self runInstalledVersion:entry[@"update"] entry:entry enable:NO];
+}
+- (void)reloadInstalledAfterChange {
+    NSUInteger generation = ++self.installedGeneration;
+    NSString *directory = self.installedDirectory; NSArray *context = self.profileSignature;
+    NSDictionary *filters = self.profileDefaults; NSArray *old = self.installedEntries ?: @[];
+    self.installedLoading = YES; self.installedError = nil; [self.tableView reloadData];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSError *error;
+        NSArray *fresh = [InstalledModsManager entriesInDirectory:directory identify:YES error:&error];
+        NSMutableDictionary *kept = [NSMutableDictionary new];
+        for (NSDictionary *entry in old) if ([entry[@"updatesChecked"] boolValue]) kept[entry[@"sha1"]] = entry;
+        NSMutableArray *toCheck = [NSMutableArray new];
+        for (NSDictionary *entry in fresh) if (!kept[entry[@"sha1"]]) [toCheck addObject:entry];
+        NSMutableDictionary *checked = [NSMutableDictionary new];
+        for (NSDictionary *row in [InstalledModsManager checkUpdates:toCheck filters:filters]) checked[row[@"sha1"]] = row;
+        NSMutableArray *merged = [NSMutableArray new];
+        for (NSDictionary *entry in fresh) {
+            NSMutableDictionary *row = [(kept[entry[@"sha1"]] ?: checked[entry[@"sha1"]] ?: entry) mutableCopy];
+            row[@"filename"] = entry[@"filename"]; row[@"enabled"] = entry[@"enabled"];
+            [merged addObject:row];
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != self.installedGeneration || ![context isEqual:self.profileSignature]) return;
+            if (fresh) self.installedEntries = merged;
+            self.installedError = error; self.installedLoading = NO; [self.tableView reloadData];
+        });
+    });
 }
 - (void)showInstalledError:(NSError *)error {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:localize(@"Error", nil) message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
@@ -826,13 +886,18 @@ static NSString *MRCategorySymbol(NSString *category) {
         else [InstalledModsManager setEntry:entry enabled:![entry[@"enabled"] boolValue] directory:directory error:&error];
         dispatch_async(dispatch_get_main_queue(), ^{
             if (![context isEqual:self.profileSignature]) return;
-            self.installedLoading = NO; if (error) [self showInstalledError:error]; [self refreshInstalled:YES];
+            self.installedLoading = NO; if (error) [self showInstalledError:error]; [self reloadInstalledAfterChange];
         });
     });
 }
 - (void)selectInstalled:(NSIndexPath *)indexPath {
     if ([ModrinthModInstallation isInstalling] || self.installedLoading) return;
-    if (indexPath.section == 0) { if (indexPath.row == 0) [self refreshInstalled:YES]; else [self runInstalledVersion:nil entry:nil enable:NO]; return; }
+    if (indexPath.section == 0) {
+        if (indexPath.row == 0) { [InstalledModsManager clearUpdateCache]; [self refreshInstalled:YES]; }
+        else if (indexPath.row == 1) [self updateAll];
+        else [self runInstalledVersion:nil entry:nil enable:NO];
+        return;
+    }
     NSArray *entries = self.visibleInstalledEntries;
     if (!entries.count) { if (self.installedError) [self refreshInstalled:YES]; return; }
     NSDictionary *entry = entries[indexPath.row];
