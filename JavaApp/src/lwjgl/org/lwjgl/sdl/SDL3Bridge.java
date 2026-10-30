@@ -253,8 +253,39 @@ final class SDL3Bridge {
 
     // relative mouse mode == amethyst's "grabbing" (hides the virtual mouse, shows in-game controls)
     static void setGrabbing(boolean enabled) {
+        boolean wasGrabbed = grabbed;
         grabbed = enabled;
+        if (wasGrabbed && !enabled) {
+            centerCursor();
+        }
         nativeSetGrabbing(enabled);
+    }
+
+    // while grabbed, curX/curY keep adding up every look-around movement and nothing ever resets
+    // them, so by the time a menu opens they are far outside the window and the first motion
+    // event puts the cursor in the bottom right corner. minecraft (like on desktop) expects the
+    // cursor in the middle of the window when it gets released, so put it there and tell it so
+    // (done outside of the onInput lock on purpose: the native call below must not be held up)
+    private static void centerCursor() {
+        if (inputWindow == 0L) {
+            return;
+        }
+        synchronized (SDL3Bridge.class) {
+            try {
+                refreshWindowSize();
+                if (winW <= 0 || winH <= 0) {
+                    return;
+                }
+                curX = winW / 2f;
+                curY = winH / 2f;
+                lastX = curX;
+                lastY = curY;
+                trace("[SDL3 TRACE] mouse released, cursor centered at " + curX + "," + curY);
+                pushMotion(0f, 0f);
+            } catch (Throwable t) {
+                warn("could not center the cursor: " + t);
+            }
+        }
     }
 
     // called from native on whatever thread uikit delivered the event on
