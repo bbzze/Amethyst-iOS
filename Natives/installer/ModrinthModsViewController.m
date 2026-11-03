@@ -12,6 +12,7 @@
 
 @interface InstalledModsManager (UpdateCache)
 + (void)clearUpdateCache;
++ (void)logMessage:(NSString *)message;
 @end
 
 @interface ModrinthIconView : UIImageView
@@ -834,6 +835,7 @@ static NSString *MRCategorySymbol(NSString *category) {
     if (!entries.count) return;
     self.updateQueue = entries.mutableCopy;
     self.updateAllTotal = entries.count;
+    [InstalledModsManager logMessage:[NSString stringWithFormat:@"Update all started for %lu mod(s)", (unsigned long)entries.count]];
     [self startNextQueuedUpdate];
 }
 - (void)startNextQueuedUpdate {
@@ -843,6 +845,7 @@ static NSString *MRCategorySymbol(NSString *category) {
         return;
     }
     NSDictionary *entry = self.updateQueue.firstObject; [self.updateQueue removeObjectAtIndex:0];
+    [InstalledModsManager logMessage:[NSString stringWithFormat:@"Update all: updating %@ (%lu left after this)", entry[@"filename"], (unsigned long)self.updateQueue.count]];
     [self runInstalledVersion:entry[@"update"] entry:entry enable:NO];
 }
 - (void)reloadInstalledAfterChange {
@@ -873,6 +876,7 @@ static NSString *MRCategorySymbol(NSString *category) {
     });
 }
 - (void)showInstalledError:(NSError *)error {
+    [InstalledModsManager logMessage:[NSString stringWithFormat:@"Error shown to the user: %@ (domain %@, code %ld, details %@)", error.localizedDescription, error.domain, (long)error.code, error.userInfo]];
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:localize(@"Error", nil) message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:localize(@"OK", nil) style:UIAlertActionStyleDefault handler:nil]];
     if (!self.presentedViewController) [self presentViewController:alert animated:YES completion:nil];
