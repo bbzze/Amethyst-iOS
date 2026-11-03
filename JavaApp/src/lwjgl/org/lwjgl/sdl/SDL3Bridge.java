@@ -457,6 +457,12 @@ final class SDL3Bridge {
             curX = x;
             curY = y;
         }
+        // never let the tracked position wander outside the window (while grabbed it only ever
+        // adds up deltas, so after a long play session it ends up thousands of pixels away)
+        if (winW > 0 && winH > 0) {
+            curX = Math.max(0f, Math.min(curX, winW));
+            curY = Math.max(0f, Math.min(curY, winH));
+        }
         if (dx == 0f && dy == 0f) {
             return;
         }
