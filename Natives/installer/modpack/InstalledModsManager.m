@@ -16,8 +16,7 @@ static BOOL IMName(NSString *name) {
 }
 static NSData *IMPayload(id value) { return [value isKindOfClass:NSData.class] ? value : [value isKindOfClass:NSString.class] ? [NSData dataWithContentsOfFile:value options:NSDataReadingMappedIfSafe error:nil] : nil; }
 
-// Logging stuff...
-// Logged as "[ModManager]".
+// logging stuff as [ModManager]
 static void IMLog(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
 static void IMLog(NSString *format, ...) {
     va_list args; va_start(args, format);
@@ -177,6 +176,7 @@ static BOOL IMValidEntry(NSDictionary *entry, NSString *directory, NSError **err
 + (NSArray *)planForEntries:(NSArray *)entries requested:(NSArray *)requested filters:(NSDictionary *)filters error:(NSError **)error {
     IMLog(@"PLAN start: %@, %lu installed file(s), %lu requested change(s)", IMFilterText(filters), (unsigned long)entries.count, (unsigned long)requested.count);
     if (!IMString(filters[@"mcVersion"]).length || !IMString(filters[@"loader"]).length) { if (error) *error = IMError(@"mods.installed.profile_required", nil); return nil; }
+    NSMutableDictionary *installedIDs = [NSMutableDictionary new]; // mods that are enabled right now and what version they are
     NSMutableDictionary *selected = [NSMutableDictionary new], *providers = [NSMutableDictionary new], *explicit = [NSMutableDictionary new], *pins = [NSMutableDictionary new], *disabled = [NSMutableDictionary new];
     for (NSDictionary *entry in entries) {
         NSString *project = IMString(entry[@"version"][@"project_id"]), *provider = entry[@"provider"];
@@ -186,7 +186,7 @@ static BOOL IMValidEntry(NSDictionary *entry, NSString *directory, NSError **err
         NSDictionary *version = entry[@"version"];
         if (!version[@"dependencies"]) { ModpackAPI *api = IMAPI(provider); version = [api versionForID:version[@"id"] projectID:project]; if (!version) { if (error) *error = IMFail(api, @"mods.installed.unresolved", project); return nil; } }
         if (![ModrinthSearchFilters versions:@[version] matchingFilters:filters].count) { IMLog(@"UNRESOLVED installed mod %@ (file %@) does not match the profile: profile is %@, but it is %@", IMVersionName(version), entry[@"filename"], IMFilterText(filters), IMBuiltFor(version)); if (error) *error = IMError(@"mods.installed.unresolved", project); return nil; }
-        selected[key] = version; providers[key] = provider;
+        selected[key] = version; providers[key] = provider; installedIDs[key] = version[@"id"];
     }
     for (NSDictionary *request in requested) {
         NSDictionary *version = request[@"version"]; NSString *provider = request[@"provider"] ?: @"modrinth", *project = IMString(version[@"project_id"]);
@@ -221,10 +221,25 @@ static BOOL IMValidEntry(NSDictionary *entry, NSString *directory, NSError **err
                 if (!candidate) {
                     NSArray *versions = [[ModrinthSearchFilters versions:[api versionsForProject:project filters:filters] matchingFilters:filters] sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"date_published" ascending:NO]]];
                     for (NSDictionary *value in versions) if (![value[@"downloadUnavailable"] boolValue] && [ModrinthModInstallation jarFileForVersion:value]) { candidate = value; break; }
-                    if (!candidate) IMLog(@"UNRESOLVED no downloadable version of required project %@ exists for %@ (needed by %@; %lu version(s) matched the filters)", project, IMFilterText(filters), IMVersionName(version), (unsigned long)versions.count);
+                    if (!candidate) IMLog(@"NOTE no downloadable version of required project %@ exists for %@ (needed by %@; %lu version(s) matched the filters)", project, IMFilterText(filters), IMVersionName(version), (unsigned long)versions.count);
                 }
             }
-            if (!candidate || ![candidate[@"project_id"] isEqual:project] || ![ModrinthSearchFilters versions:@[candidate] matchingFilters:filters].count) { if (candidate) IMLog(@"UNRESOLVED chosen dependency %@ does not fit: %@, project wanted %@", IMVersionName(candidate), IMFilterText(filters), project); if (error) *error = IMFail(api, @"mods.installed.unresolved", project); return nil; }
+            if (!candidate || ![candidate[@"project_id"] isEqual:project] || ![ModrinthSearchFilters versions:@[candidate] matchingFilters:filters].count) {
+                // Some mods list a dependency that only exists for another loader (e.g. "Kotlin for Forge" on a Fabric version).
+                // A Fabric profile can never use it, so when the project has no version for this loader at all, it is skipped.
+                if (!candidate && [provider isEqual:@"modrinth"]) {
+                    NSMutableDictionary *anyVersion = [filters mutableCopy]; anyVersion[@"mcVersion"] = @""; anyVersion[@"loader"] = @"";
+                    NSArray *everything = [api versionsForProject:project filters:anyVersion];
+                    NSMutableSet *supportedLoaders = [NSMutableSet new];
+                    for (NSDictionary *other in everything) if ([other[@"loaders"] isKindOfClass:NSArray.class]) [supportedLoaders addObjectsFromArray:other[@"loaders"]];
+                    if (everything.count && ![supportedLoaders containsObject:IMString(filters[@"loader"])]) {
+                        IMLog(@"NOTE skipped dependency: %@ lists project %@ as required, but that project only supports [%@] and never %@, so it cannot apply to this profile (https://modrinth.com/project/%@)", IMVersionName(version), project, [supportedLoaders.allObjects componentsJoinedByString:@", "], IMString(filters[@"loader"]), project);
+                        continue;
+                    }
+                }
+                // An already-enabled mod that is not part of this change must not block it just because one of ITS dependencies has no version for this profile.
+                if ([installedIDs[key] isEqual:version[@"id"]] && !explicit[key]) { IMLog(@"WARNING skipped: installed mod %@ needs project %@, which has no version for %@. This mod is not part of the current change, so it is left as it is (check that project on Modrinth: https://modrinth.com/project/%@).", IMVersionName(version), project, IMFilterText(filters), project); continue; }
+                if (candidate) IMLog(@"UNRESOLVED chosen dependency %@ does not fit: %@, project wanted %@", IMVersionName(candidate), IMFilterText(filters), project); if (error) *error = IMFail(api, @"mods.installed.unresolved", project); return nil; }
             if (pins[depKey] && ![pins[depKey] isEqual:candidate[@"id"]]) { IMLog(@"CONFLICT project %@ must be version %@ but the chosen version is %@", project, pins[depKey], candidate[@"id"]); if (error) *error = IMError(@"mods.installed.conflict", project); return nil; }
             if (!selected[depKey] || ![selected[depKey][@"id"] isEqual:candidate[@"id"]]) { selected[depKey] = candidate; providers[depKey] = provider; [queue addObject:depKey]; IMLog(@"  -> using %@", IMVersionName(candidate)); }
             // Required dependencies are enabled, including previously disabled files.
