@@ -1,0 +1,46 @@
+name: Development build (no Java runtimes)
+
+on:
+  push:
+    branches-ignore:
+      - 'l10n_main'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Slimmed ipa build
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Checkout repository submodules
+        env:
+          GIT_LFS_SKIP_SMUDGE: 1
+        run: |
+          git lfs install --skip-smudge
+          git config --global filter.lfs.smudge "git-lfs smudge --skip -- %f"
+          git config --global filter.lfs.process "git-lfs filter-process --skip"
+
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
+      - name: Setup Xcode Version
+        uses: maxim-lobanov/setup-xcode@master
+        with:
+          xcode-version: '26.5'
+
+      - name: Install Dependencies
+        run: brew install make ldid temurin@8
+
+      - name: Build slimmed ipa (no Java runtimes)
+        run: |
+          export PATH=/opt/homebrew/bin:$PATH
+          gmake -j$(sysctl -n hw.ncpu) package PLATFORM=2 SKIP_JRE=1
+
+      - name: Upload slimmed ipa
+        uses: actions/upload-artifact@main
+        with:
+          name: org.angelauramc.amethyst.slimmed-ios.ipa
+          path: artifacts/org.angelauramc.amethyst.slimmed-*-ios.ipa
+          archive: false
