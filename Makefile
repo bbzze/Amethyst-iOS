@@ -32,6 +32,13 @@ SLIMMED ?= 0
 # Check if slimmed should be built, and additionally skip normal build
 SLIMMED_ONLY ?= 0
 
+# Skip downloading/bundling the Java runtimes. Only a slimmed build can be made
+# without them, so this also turns on SLIMMED_ONLY.
+SKIP_JRE ?= 0
+ifeq ($(SKIP_JRE),1)
+override SLIMMED_ONLY := 1
+endif
+
 # If not in a GitHub repository, default to these
 # so that compiling doesn't fail
 ifeq (,$(BRANCH))
@@ -179,7 +186,7 @@ METHOD_JAVA_UNPACK = \
 	cd $(SOURCEDIR)/depends; \
 	if [ ! -f "java-$(1)-openjdk/release" ] && [ ! -f "$(ls jre$(1)-*.tar.xz)" ]; then \
 		if [ "$(RUNNER)" != "1" ]; then \
-			curl -OJfSL '$(2)'; \
+			curl --retry 8 --retry-delay 10 --retry-all-errors -OJfSL '$(2)'; \
 			unzip jre*-ios-aarch64.zip && rm jre*-ios-aarch64.zip; \
 		fi; \
 		mkdir -p java-$(1)-openjdk; \
@@ -306,6 +313,9 @@ java:
 	echo '[Amethyst v$(VERSION)] java - end'
 
 jre: native
+ifeq ($(SKIP_JRE),1)
+	echo '[Amethyst v$(VERSION)] jre - skipped (SKIP_JRE=1)'
+else
 	echo '[Amethyst v$(VERSION)] jre - start'
 	mkdir -p $(SOURCEDIR)/depends
 	cd $(SOURCEDIR)/depends; \
@@ -326,6 +336,7 @@ jre: native
 	cp $(WORKINGDIR)/libawt_xawt.dylib $(OUTPUTDIR)/java_runtimes/java-21-openjdk/lib;
 	cp $(WORKINGDIR)/libawt_xawt.dylib $(OUTPUTDIR)/java_runtimes/java-25-openjdk/lib
 	echo '[Amethyst v$(VERSION)] jre - end'
+endif
 
 dep_mg:
 	echo '[Amethyst v$(VERSION)] dep_mg - start'
@@ -504,7 +515,7 @@ package: payload
 	fi
 	cd $(OUTPUTDIR); \
 	$(call METHOD_PACKAGE); \
-	zip --symlinks -r $(OUTPUTDIR)/java_runtimes.zip java_runtimes; \
+	if [ '$(SKIP_JRE)' != '1' ]; then zip --symlinks -r $(OUTPUTDIR)/java_runtimes.zip java_runtimes; fi; \
 	echo '[Amethyst v$(VERSION)] package - end'
 	
 dsym: payload
