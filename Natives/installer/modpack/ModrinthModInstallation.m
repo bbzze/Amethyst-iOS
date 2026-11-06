@@ -7,7 +7,18 @@
 NSNotificationName const ModrinthModInstallStateDidChangeNotification = @"ModrinthModInstallStateDidChange";
 static ModrinthModInstallation *activeInstallation;
 
+// we love logging
+static void MILog(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
+static void MILog(NSString *format, ...) {
+    va_list args; va_start(args, format);
+    NSString *line = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+    printf("[ModManager] %s\n", line.UTF8String);
+    fflush(stdout);
+}
+
 static NSError *MIError(NSString *key) {
+    MILog(@"ERROR %@ (%@)", key, NSLocalizedString(key, nil));
     return [NSError errorWithDomain:@"ModrinthInstallation" code:1 userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(key, nil)}];
 }
 static BOOL MIFileName(id name, NSString *extension) {
@@ -275,7 +286,7 @@ static NSDictionary *MIIdentity(NSDictionary *version, NSString *projectID) {
             NSError *error = downloadError;
             NSData *data = [object isKindOfClass:NSData.class] ? object : nil;
             if (self.progress.cancelled) error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
-            if (!error && (data.length != [file[@"size"] unsignedLongLongValue] || ![MIHash(data) isEqual:hash.lowercaseString])) error = MIError(@"mods.install.hash_error");
+            if (!error && (data.length != [file[@"size"] unsignedLongLongValue] || ![MIHash(data) isEqual:hash.lowercaseString])) { MILog(@"Downloaded file failed verification: got %lu bytes, expected %@ bytes, checksum matches: %d", (unsigned long)data.length, file[@"size"], data ? [MIHash(data) isEqual:hash.lowercaseString] : NO); error = MIError(@"mods.install.hash_error"); }
             if (!error) [self commitData:data file:file error:&error];
             dispatch_async(dispatch_get_main_queue(), ^{
                 self.busy = NO;
@@ -313,6 +324,7 @@ static NSDictionary *MIIdentity(NSDictionary *version, NSString *projectID) {
     self.busy = YES; self.checking = YES; self.verifying = NO; self.error = nil;
     self.installingVersion = version ?: @{@"version_number": NSLocalizedString(@"mods.installed.dependencies", nil)};
     self.progress = [NSProgress progressWithTotalUnitCount:0]; activeInstallation = self;
+    MILog(@"Starting %@ for project %@ (%@)", version ? @"install/enable" : @"dependency check", self.projectID, self.provider);
     [NSNotificationCenter.defaultCenter postNotificationName:ModrinthModInstallStateDidChangeNotification object:self]; [self changed];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         NSError *error;
@@ -350,7 +362,7 @@ static NSDictionary *MIIdentity(NSDictionary *version, NSString *projectID) {
     NSDictionary *file = [self.class jarFileForVersion:version]; NSString *hash = file[@"hashes"][@"sha1"];
     NSURL *url = [NSURL URLWithString:[file[@"url"] isKindOfClass:NSString.class] ? file[@"url"] : @""];
     NSCharacterSet *hex = [NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdefABCDEF"];
-    if (!file || [version[@"downloadUnavailable"] boolValue] || ![url.scheme.lowercaseString isEqual:@"https"] || !url.host.length || ![hash isKindOfClass:NSString.class] || hash.length != 40 || [hash rangeOfCharacterFromSet:hex.invertedSet].location != NSNotFound || [file[@"size"] longLongValue] <= 0) { [self finishDependencyOperation:MIError(@"content.download.unavailable")]; return; }
+    if (!file || [version[@"downloadUnavailable"] boolValue] || ![url.scheme.lowercaseString isEqual:@"https"] || !url.host.length || ![hash isKindOfClass:NSString.class] || hash.length != 40 || [hash rangeOfCharacterFromSet:hex.invertedSet].location != NSNotFound || [file[@"size"] longLongValue] <= 0) { MILog(@"Cannot download %@: the download info is missing or invalid, or the author restricts third-party downloads (file %@, restricted: %d)", version[@"name"] ?: version[@"version_number"], file[@"filename"], [version[@"downloadUnavailable"] boolValue]); [self finishDependencyOperation:MIError(@"content.download.unavailable")]; return; }
     // Reactivating a verified local file needs no download. It still participates in the batch journal.
     for (NSDictionary *entry in item[@"previous"]) if ([entry[@"sha1"] isEqual:hash.lowercaseString]) {
         NSData *data = [NSData dataWithContentsOfFile:[self.modsDirectory stringByAppendingPathComponent:entry[@"filename"]] options:NSDataReadingMappedIfSafe error:nil];
@@ -362,6 +374,7 @@ static NSDictionary *MIIdentity(NSDictionary *version, NSString *projectID) {
         }
     }
     self.installingVersion = version; [self changed];
+    MILog(@"Downloading %@", file[@"filename"]);
     int64_t completed = self.progress.completedUnitCount;
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     [request setValue:@"AngelAuraAmethyst/1.0 (https://github.com/AngelAuraMC/Amethyst-iOS)" forHTTPHeaderField:@"User-Agent"];
@@ -371,7 +384,7 @@ static NSDictionary *MIIdentity(NSDictionary *version, NSString *projectID) {
         NSData *data = [object isKindOfClass:NSData.class] ? object : nil;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             NSError *error = downloadError;
-            if (!error && (data.length != [file[@"size"] unsignedLongLongValue] || ![MIHash(data) isEqual:hash.lowercaseString])) error = MIError(@"mods.install.hash_error");
+            if (!error && (data.length != [file[@"size"] unsignedLongLongValue] || ![MIHash(data) isEqual:hash.lowercaseString])) { MILog(@"Downloaded file failed verification: got %lu bytes, expected %@ bytes, checksum matches: %d", (unsigned long)data.length, file[@"size"], data ? [MIHash(data) isEqual:hash.lowercaseString] : NO); error = MIError(@"mods.install.hash_error"); }
             NSString *path = [self.dependencyStage stringByAppendingPathComponent:hash];
             if (!error) [data writeToFile:path options:NSDataWritingAtomic error:&error];
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -384,6 +397,7 @@ static NSDictionary *MIIdentity(NSDictionary *version, NSString *projectID) {
     [self.task resume];
 }
 - (void)finishDependencyOperation:(NSError *)error {
+    if (error) MILog(@"Install/dependency operation FAILED: %@ (domain %@, code %ld)", error.localizedDescription, error.domain, (long)error.code); else MILog(@"Install/dependency operation finished successfully");
     self.busy = NO; self.checking = NO; self.verifying = NO; self.task = nil; self.error = error;
     self.dependencyPayloads = nil; self.dependencyPlan = nil;
     if (self.dependencyStage) [NSFileManager.defaultManager removeItemAtPath:self.dependencyStage error:nil];
